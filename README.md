@@ -13,9 +13,21 @@ The features provided by this draft implementation are not meant to be functiona
 
 Supported features:
 
-- [ ] market orders
-- [ ] limit orders
+- [x] market orders
+- [x] limit orders
 - [ ] stop loss orders
 - [ ] stop loss limit orders
 - [ ] take profit orders
 - [ ] take profit limit orders
+
+## How to use
+
+**install dependency**
+
+```toml
+orderbook = { version = "0.1.0", git = "https://github.com/sencoinex/orderbook", branch = "main" }
+```
+
+**basic example**
+
+TBD
