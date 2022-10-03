@@ -6,7 +6,7 @@ pub enum OrderBookOutput {
     Accepted {
         id: OrderId,
         order_type: OrderType,
-        ts: SystemTime,
+        timestamp: SystemTime,
     },
 
     Filled {

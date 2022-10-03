@@ -32,7 +32,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 proc_result.push(Ok(OrderBookOutput::Accepted {
                     id,
                     order_type: OrderType::Market,
-                    ts: SystemTime::now(),
+                    timestamp: SystemTime::now(),
                 }));
                 self.process_market_order(&mut proc_result, id, side, quantity, timestamp);
             }
@@ -48,7 +48,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 proc_result.push(Ok(OrderBookOutput::Accepted {
                     id,
                     order_type: OrderType::Limit,
-                    ts: SystemTime::now(),
+                    timestamp: SystemTime::now(),
                 }));
                 self.process_limit_order(&mut proc_result, id, side, price, quantity, timestamp);
             }
