@@ -2,7 +2,7 @@ use crate::{OrderId, OrderSide, OrderType, Price, Quantity};
 use std::time::SystemTime;
 
 #[derive(Debug)]
-pub enum OrderBookOutput {
+pub enum MatchingEngineOutput {
     Accepted {
         id: OrderId,
         order_type: OrderType,

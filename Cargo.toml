@@ -1,9 +1,9 @@
 [package]
-name = "orderbook"
+name = "matching-engine"
 version = "0.1.0"
 authors = ["Hiroki Tanaka <support@sencoinex.com>"]
 license = "MIT"
-repository = "https://github.com/sencoinex/orderbook"
+repository = "https://github.com/sencoinex/matching-engine"
 edition = "2021"
 
 [dependencies]

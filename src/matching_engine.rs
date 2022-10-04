@@ -4,20 +4,28 @@ mod output;
 pub use failure::*;
 pub use output::*;
 
-pub type OrderProcessingResult = Vec<Result<OrderBookOutput, OrderBookFailure>>;
+pub type OrderProcessingResult = Vec<Result<MatchingEngineOutput, MatchingEngineFailure>>;
 
 use crate::models::{Asset, AssetPair, Order, OrderId, OrderSide, OrderType, Quantity};
 use crate::order_queue::{LimitOrder, MarketOrder, OrderQueue};
 use crate::Price;
 use std::time::SystemTime;
 
-pub struct OrderBook<A: Asset, LQ: OrderQueue<Element = LimitOrder>> {
+pub struct MatchingEngine<A: Asset, LQ: OrderQueue<Element = LimitOrder>> {
     asset_pair: AssetPair<A>,
     bid_limit_queue: LQ,
     ask_limit_queue: LQ,
 }
 
-impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
+impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> MatchingEngine<A, LQ> {
+    pub fn new(asset_pair: AssetPair<A>, bid_limit_queue: LQ, ask_limit_queue: LQ) -> Self {
+        Self {
+            asset_pair,
+            bid_limit_queue,
+            ask_limit_queue,
+        }
+    }
+
     pub fn process_order(&mut self, order: Order<A>) -> OrderProcessingResult {
         let mut proc_result: OrderProcessingResult = vec![];
         match order {
@@ -29,7 +37,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 timestamp,
             } => {
                 assert_eq!(self.asset_pair, asset_pair);
-                proc_result.push(Ok(OrderBookOutput::Accepted {
+                proc_result.push(Ok(MatchingEngineOutput::Accepted {
                     id,
                     order_type: OrderType::Market,
                     timestamp: SystemTime::now(),
@@ -45,7 +53,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 timestamp,
             } => {
                 assert_eq!(self.asset_pair, asset_pair);
-                proc_result.push(Ok(OrderBookOutput::Accepted {
+                proc_result.push(Ok(MatchingEngineOutput::Accepted {
                     id,
                     order_type: OrderType::Limit,
                     timestamp: SystemTime::now(),
@@ -121,7 +129,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 );
             }
         } else {
-            results.push(Err(OrderBookFailure::NoMatch(order_id)));
+            results.push(Err(MatchingEngineFailure::NoMatch(order_id)));
         }
     }
 
@@ -193,7 +201,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                     OrderSide::Bid => self.bid_limit_queue.amend(order, timestamp),
                     OrderSide::Ask => self.ask_limit_queue.amend(order, timestamp),
                 } {
-                    results.push(Ok(OrderBookOutput::Amended {
+                    results.push(Ok(MatchingEngineOutput::Amended {
                         id: order_id,
                         target_id: target_order_id,
                         price,
@@ -202,7 +210,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                     }));
                     // TODO process limit order?
                 } else {
-                    results.push(Err(OrderBookFailure::OrderNotFound {
+                    results.push(Err(MatchingEngineFailure::OrderNotFound {
                         order_id,
                         target_order_id,
                     }));
@@ -226,13 +234,13 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                     OrderSide::Bid => self.bid_limit_queue.remove(target_order_id),
                     OrderSide::Ask => self.ask_limit_queue.remove(target_order_id),
                 } {
-                    results.push(Ok(OrderBookOutput::Cancelled {
+                    results.push(Ok(MatchingEngineOutput::Cancelled {
                         id: order_id,
                         target_id: target_order_id,
                         timestamp: SystemTime::now(),
                     }));
                 } else {
-                    results.push(Err(OrderBookFailure::OrderNotFound {
+                    results.push(Err(MatchingEngineFailure::OrderNotFound {
                         order_id,
                         target_order_id,
                     }));
@@ -254,7 +262,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
             OrderSide::Bid => self.bid_limit_queue.insert(order, timestamp),
             OrderSide::Ask => self.ask_limit_queue.insert(order, timestamp),
         } {
-            results.push(Err(OrderBookFailure::FailedToEnqueueOrder(order_id)))
+            results.push(Err(MatchingEngineFailure::FailedToEnqueueOrder(order_id)))
         }
     }
 
@@ -268,7 +276,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
         let deal_time = SystemTime::now();
         if order.quantity < opposite_order.quantity {
             // market order: fully filled / limit order: partially filled
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Market,
@@ -276,7 +284,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::PartiallyFilled {
+            results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,
@@ -298,7 +306,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
             true
         } else if order.quantity > opposite_order.quantity {
             // market order: partially filled / limit order: fully filled
-            results.push(Ok(OrderBookOutput::PartiallyFilled {
+            results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Market,
@@ -306,7 +314,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: opposite_order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,
@@ -323,7 +331,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
             false
         } else {
             // exact match
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Market,
@@ -331,7 +339,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,
@@ -359,7 +367,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
         let deal_time = SystemTime::now();
         if order.quantity < opposite_order.quantity {
             // limit order: fully filled / limit order: partially filled
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Limit,
@@ -367,7 +375,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::PartiallyFilled {
+            results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,
@@ -389,7 +397,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
             true
         } else if order.quantity > opposite_order.quantity {
             // market order: partially filled / limit order: fully filled
-            results.push(Ok(OrderBookOutput::PartiallyFilled {
+            results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Limit,
@@ -397,7 +405,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: opposite_order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,
@@ -414,7 +422,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
             false
         } else {
             // exact match
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: order.order_id,
                 side,
                 order_type: OrderType::Limit,
@@ -422,7 +430,7 @@ impl<A: Asset, LQ: OrderQueue<Element = LimitOrder>> OrderBook<A, LQ> {
                 quantity: order.quantity,
                 timestamp: deal_time,
             }));
-            results.push(Ok(OrderBookOutput::Filled {
+            results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.order_id,
                 side: side.opposite(),
                 order_type: OrderType::Limit,

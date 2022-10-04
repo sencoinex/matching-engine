@@ -1,4 +1,4 @@
-# OrderBook
+# Matching Engine
 
 Basic order matching engine system written in Rust. 
 
@@ -25,7 +25,7 @@ Supported features:
 **install dependency**
 
 ```toml
-orderbook = { version = "0.1.0", git = "https://github.com/sencoinex/orderbook", branch = "main" }
+matching-engine = { version = "0.1.0", git = "https://github.com/sencoinex/matching-engine", branch = "main" }
 ```
 
 **basic example**

@@ -1,7 +1,7 @@
 use crate::OrderId;
 
 #[derive(Debug)]
-pub enum OrderBookFailure {
+pub enum MatchingEngineFailure {
     OrderNotFound {
         order_id: OrderId,
         target_order_id: OrderId,

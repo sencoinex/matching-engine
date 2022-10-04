@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "orderbook"
+name = "matching-engine"
 version = "0.1.0"
