@@ -2,15 +2,15 @@ use crate::{OrderId, OrderSide, OrderType, Price, Quantity};
 use std::time::SystemTime;
 
 #[derive(Debug)]
-pub enum MatchingEngineOutput {
+pub enum MatchingEngineOutput<ID: OrderId> {
     Accepted {
-        id: OrderId,
+        id: ID,
         order_type: OrderType,
         timestamp: SystemTime,
     },
 
     Filled {
-        id: OrderId,
+        id: ID,
         side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -19,7 +19,7 @@ pub enum MatchingEngineOutput {
     },
 
     PartiallyFilled {
-        id: OrderId,
+        id: ID,
         side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -28,16 +28,16 @@ pub enum MatchingEngineOutput {
     },
 
     Amended {
-        id: OrderId,
-        target_id: OrderId,
+        id: ID,
+        target_id: ID,
         price: Price,
         quantity: Quantity,
         timestamp: SystemTime,
     },
 
     Cancelled {
-        id: OrderId,
-        target_id: OrderId,
+        id: ID,
+        target_id: ID,
         timestamp: SystemTime,
     },
 }

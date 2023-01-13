@@ -7,3 +7,9 @@ repository = "https://github.com/sencoinex/matching-engine"
 edition = "2021"
 
 [dependencies]
+ulid = "1.0.0"
+# redb = "0.11.0"
+redb = { git = "https://github.com/cberner/redb", rev = "f51dd33e09e14ccb05b8b855000af08eebfc46e9"}
+
+[[example]]
+name = "rbdb_example"

@@ -1,11 +1,8 @@
 use crate::OrderId;
 
 #[derive(Debug)]
-pub enum MatchingEngineFailure {
-    OrderNotFound {
-        order_id: OrderId,
-        target_order_id: OrderId,
-    },
-    FailedToEnqueueOrder(OrderId),
-    NoMatch(OrderId),
+pub enum MatchingEngineFailure<ID: OrderId> {
+    OrderNotFound { order_id: ID, target_order_id: ID },
+    FailedToEnqueueOrder(ID),
+    NoMatch(ID),
 }

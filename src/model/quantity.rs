@@ -7,6 +7,12 @@ pub struct Quantity {
     pub scale: u32,
 }
 
+impl Quantity {
+    pub fn new(num: u64, scale: u32) -> Self {
+        Self { num, scale }
+    }
+}
+
 impl PartialEq for Quantity {
     fn eq(&self, other: &Self) -> bool {
         self.scale == other.scale && self.num == other.num

@@ -1,6 +1,7 @@
 mod matching_engine;
-mod models;
-pub mod order_queue;
+mod model;
+mod repository;
 
 pub use matching_engine::*;
-pub use models::*;
+pub use model::*;
+pub use repository::*;
