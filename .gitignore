@@ -46,3 +46,6 @@ target/
 !rust-toolchain.toml
 !Cargo.toml
 !diesel.toml
+
+# redb data
+*.redb

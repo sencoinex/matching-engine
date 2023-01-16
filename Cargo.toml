@@ -6,10 +6,13 @@ license = "MIT"
 repository = "https://github.com/sencoinex/matching-engine"
 edition = "2021"
 
-[dependencies]
+[dev-dependencies]
 ulid = "1.0.0"
-# redb = "0.11.0"
-redb = { git = "https://github.com/cberner/redb", rev = "f51dd33e09e14ccb05b8b855000af08eebfc46e9"}
+redb = "0.11.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ciborium = "0.2.0"
+rust_decimal = "1.27.0"
 
 [[example]]
-name = "rbdb_example"
+name = "redb_example"

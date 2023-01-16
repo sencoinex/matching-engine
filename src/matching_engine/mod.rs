@@ -4,53 +4,65 @@ mod output;
 pub use failure::*;
 pub use output::*;
 
-pub type OrderProcessingResult<ID> =
-    Vec<Result<MatchingEngineOutput<ID>, MatchingEngineFailure<ID>>>;
+pub type OrderProcessingResult<ID, P, Q> =
+    Vec<Result<MatchingEngineOutput<ID, P, Q>, MatchingEngineFailure<ID>>>;
 
 use crate::{
     model::{
         AmendOrder, Asset, AssetPair, CancelOrder, LimitOrder, MarketOrder, OrderId, OrderRequest,
-        OrderSide, OrderType,
+        OrderSide, OrderType, Price, Quantity,
     },
     repository::LimitOrderRepositoryLike,
 };
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub trait MatchingEngine {
     type Err;
     type Asset: Asset;
     type OrderId: OrderId;
+    type Price: Price;
+    type Quantity: Quantity;
     type Transaction;
     type BidLimitOrderRepository: LimitOrderRepositoryLike<
         Err = Self::Err,
         Asset = Self::Asset,
         OrderId = Self::OrderId,
+        Price = Self::Price,
+        Quantity = Self::Quantity,
         Transaction = Self::Transaction,
     >;
     type AskLimitOrderRepository: LimitOrderRepositoryLike<
         Err = Self::Err,
         Asset = Self::Asset,
         OrderId = Self::OrderId,
+        Price = Self::Price,
+        Quantity = Self::Quantity,
         Transaction = Self::Transaction,
     >;
 
     fn asset_pair(&self) -> &AssetPair<Self::Asset>;
     fn bid_limit_order_repository(&self) -> &Self::BidLimitOrderRepository;
     fn ask_limit_order_repository(&self) -> &Self::AskLimitOrderRepository;
+    fn current_timestamp_ms(&self) -> u64 {
+        let now = SystemTime::now();
+        let since_the_epoch = now.duration_since(UNIX_EPOCH).unwrap();
+        since_the_epoch.as_millis() as u64
+    }
 
     fn process_order(
         &mut self,
         tx: &mut Self::Transaction,
-        order_request: OrderRequest<Self::OrderId, Self::Asset>,
-    ) -> Result<OrderProcessingResult<Self::OrderId>, Self::Err> {
-        let mut proc_result: OrderProcessingResult<Self::OrderId> = vec![];
+        order_request: OrderRequest<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
+    ) -> Result<OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>, Self::Err> {
+        let mut proc_result: OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity> =
+            vec![];
         match order_request {
             OrderRequest::Market(market_order) => {
                 assert_eq!(*self.asset_pair(), market_order.asset_pair);
                 proc_result.push(Ok(MatchingEngineOutput::Accepted {
                     id: market_order.id,
                     order_type: OrderType::Market,
-                    timestamp: SystemTime::now(),
+                    timestamp_ms: self.current_timestamp_ms(),
                 }));
                 self.process_market_order(tx, &mut proc_result, &market_order)?;
             }
@@ -59,7 +71,7 @@ pub trait MatchingEngine {
                 proc_result.push(Ok(MatchingEngineOutput::Accepted {
                     id: limit_order.id,
                     order_type: OrderType::Limit,
-                    timestamp: SystemTime::now(),
+                    timestamp_ms: self.current_timestamp_ms(),
                 }));
                 self.process_limit_order(tx, &mut proc_result, &limit_order)?;
             }
@@ -86,8 +98,8 @@ pub trait MatchingEngine {
     fn process_market_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
-        market_order: &MarketOrder<Self::OrderId, Self::Asset>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        market_order: &MarketOrder<Self::OrderId, Self::Asset, Self::Quantity>,
     ) -> Result<(), Self::Err> {
         let opposite_order = match market_order.side {
             OrderSide::Bid => self.ask_limit_order_repository().next(tx),
@@ -113,8 +125,8 @@ pub trait MatchingEngine {
     fn process_limit_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
-        limit_order: &LimitOrder<Self::OrderId, Self::Asset>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        limit_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<(), Self::Err> {
         let opposite_order = match limit_order.side {
             OrderSide::Bid => self.ask_limit_order_repository().next(tx),
@@ -149,8 +161,8 @@ pub trait MatchingEngine {
     fn process_amend_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
-        amend_order: &AmendOrder<Self::OrderId, Self::Asset>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        amend_order: &AmendOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<(), Self::Err> {
         match amend_order.target_order_type {
             OrderType::Limit => {
@@ -165,7 +177,7 @@ pub trait MatchingEngine {
                 if let Some(mut target_order) = order {
                     target_order.price = amend_order.price;
                     target_order.quantity = amend_order.quantity;
-                    target_order.timestamp = amend_order.timestamp;
+                    target_order.timestamp_ms = amend_order.timestamp_ms;
                     match amend_order.side {
                         OrderSide::Bid => {
                             self.bid_limit_order_repository().update(tx, &target_order)
@@ -179,7 +191,7 @@ pub trait MatchingEngine {
                         target_id: amend_order.target_id,
                         price: amend_order.price,
                         quantity: amend_order.quantity,
-                        timestamp: SystemTime::now(),
+                        timestamp_ms: self.current_timestamp_ms(),
                     }));
                     // TODO process limit order?
                 } else {
@@ -197,7 +209,7 @@ pub trait MatchingEngine {
     fn process_cancel_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         cancel_order: &CancelOrder<Self::OrderId, Self::Asset>,
     ) -> Result<(), Self::Err> {
         match cancel_order.target_order_type {
@@ -213,7 +225,7 @@ pub trait MatchingEngine {
                 results.push(Ok(MatchingEngineOutput::Cancelled {
                     id: cancel_order.id,
                     target_id: cancel_order.target_id,
-                    timestamp: SystemTime::now(),
+                    timestamp_ms: self.current_timestamp_ms(),
                 }));
             }
             _ => { /* ignore */ }
@@ -224,8 +236,8 @@ pub trait MatchingEngine {
     fn store_new_limit_order(
         &mut self,
         tx: &mut Self::Transaction,
-        _results: &mut OrderProcessingResult<Self::OrderId>,
-        limit_order: &LimitOrder<Self::OrderId, Self::Asset>,
+        _results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        limit_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<(), Self::Err> {
         match limit_order.side {
             OrderSide::Bid => self.bid_limit_order_repository().create(tx, limit_order),
@@ -236,11 +248,11 @@ pub trait MatchingEngine {
     fn match_market_order_with_limit_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
-        order: &MarketOrder<Self::OrderId, Self::Asset>,
-        opposite_order: &LimitOrder<Self::OrderId, Self::Asset>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        order: &MarketOrder<Self::OrderId, Self::Asset, Self::Quantity>,
+        opposite_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<bool, Self::Err> {
-        let deal_time = SystemTime::now();
+        let deal_time = self.current_timestamp_ms();
         if order.quantity < opposite_order.quantity {
             // market order: fully filled / limit order: partially filled
             results.push(Ok(MatchingEngineOutput::Filled {
@@ -249,7 +261,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Market,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: opposite_order.id,
@@ -257,7 +269,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // modify unmatched part of the opposite limit order
@@ -279,7 +291,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Market,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.id,
@@ -287,7 +299,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // remove filled limit order from the queue
@@ -308,7 +320,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Market,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.id,
@@ -316,7 +328,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // remove filled limit order from the queue
@@ -335,11 +347,11 @@ pub trait MatchingEngine {
     fn match_limit_order_with_limit_order(
         &mut self,
         tx: &mut Self::Transaction,
-        results: &mut OrderProcessingResult<Self::OrderId>,
-        order: &LimitOrder<Self::OrderId, Self::Asset>,
-        opposite_order: &LimitOrder<Self::OrderId, Self::Asset>,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
+        opposite_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<bool, Self::Err> {
-        let deal_time = SystemTime::now();
+        let deal_time = self.current_timestamp_ms();
         if order.quantity < opposite_order.quantity {
             // limit order: fully filled / limit order: partially filled
             results.push(Ok(MatchingEngineOutput::Filled {
@@ -348,7 +360,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::PartiallyFilled {
                 id: opposite_order.id,
@@ -356,7 +368,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // modify unmatched part of the opposite limit order
@@ -378,7 +390,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.id,
@@ -386,7 +398,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // remove filled limit order from the queue
@@ -407,7 +419,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
             results.push(Ok(MatchingEngineOutput::Filled {
                 id: opposite_order.id,
@@ -415,7 +427,7 @@ pub trait MatchingEngine {
                 order_type: OrderType::Limit,
                 price: opposite_order.price,
                 quantity: opposite_order.quantity,
-                timestamp: deal_time,
+                timestamp_ms: deal_time,
             }));
 
             // remove filled limit order from the queue

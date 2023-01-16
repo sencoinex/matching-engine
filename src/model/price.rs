@@ -1,32 +1,5 @@
-use std::cmp::Ordering;
+use core::fmt::{Debug, Display};
 
-#[derive(Debug, Copy, Clone, Eq)]
-pub struct Price {
-    pub num: u64,
-    pub scale: u32,
-}
+pub trait Price: PartialOrd + Ord + PartialEq + Eq + Clone + Copy + Debug + Display {}
 
-impl Price {
-    pub fn new(num: u64, scale: u32) -> Self {
-        Self { num, scale }
-    }
-}
-
-impl PartialEq for Price {
-    fn eq(&self, other: &Self) -> bool {
-        self.scale == other.scale && self.num == other.num
-    }
-}
-
-impl Ord for Price {
-    fn cmp(&self, other: &Self) -> Ordering {
-        assert_eq!(self.scale, other.scale);
-        self.num.cmp(&other.num)
-    }
-}
-
-impl PartialOrd for Price {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+impl<T> Price for T where T: PartialOrd + Ord + PartialEq + Eq + Clone + Copy + Debug + Display {}

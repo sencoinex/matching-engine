@@ -1,29 +1,28 @@
 use super::order::{AmendOrder, CancelOrder, LimitOrder, MarketOrder};
 use super::{Asset, AssetPair, OrderId, OrderSide, OrderType, Price, Quantity};
-use std::time::SystemTime;
 
 #[derive(Debug)]
-pub enum OrderRequest<ID: OrderId, A: Asset> {
-    Market(MarketOrder<ID, A>),
-    Limit(LimitOrder<ID, A>),
-    Amend(AmendOrder<ID, A>),
+pub enum OrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
+    Market(MarketOrder<ID, A, Q>),
+    Limit(LimitOrder<ID, A, P, Q>),
+    Amend(AmendOrder<ID, A, P, Q>),
     Cancel(CancelOrder<ID, A>),
 }
 
-impl<ID: OrderId, A: Asset> OrderRequest<ID, A> {
+impl<ID: OrderId, A: Asset, P: Price, Q: Quantity> OrderRequest<ID, A, P, Q> {
     pub fn new_market(
         id: ID,
         asset_pair: AssetPair<A>,
         side: OrderSide,
-        quantity: Quantity,
-        timestamp: SystemTime,
+        quantity: Q,
+        timestamp_ms: u64,
     ) -> Self {
         Self::Market(MarketOrder {
             id,
             asset_pair,
             side,
             quantity,
-            timestamp,
+            timestamp_ms,
         })
     }
 
@@ -31,9 +30,9 @@ impl<ID: OrderId, A: Asset> OrderRequest<ID, A> {
         id: ID,
         asset_pair: AssetPair<A>,
         side: OrderSide,
-        price: Price,
-        quantity: Quantity,
-        timestamp: SystemTime,
+        price: P,
+        quantity: Q,
+        timestamp_ms: u64,
     ) -> Self {
         Self::Limit(LimitOrder {
             id,
@@ -41,7 +40,7 @@ impl<ID: OrderId, A: Asset> OrderRequest<ID, A> {
             side,
             price,
             quantity,
-            timestamp,
+            timestamp_ms,
         })
     }
 
@@ -51,9 +50,9 @@ impl<ID: OrderId, A: Asset> OrderRequest<ID, A> {
         target_id: ID,
         target_order_type: OrderType,
         side: OrderSide,
-        price: Price,
-        quantity: Quantity,
-        timestamp: SystemTime,
+        price: P,
+        quantity: Q,
+        timestamp_ms: u64,
     ) -> Self {
         Self::Amend(AmendOrder {
             id,
@@ -63,7 +62,7 @@ impl<ID: OrderId, A: Asset> OrderRequest<ID, A> {
             side,
             price,
             quantity,
-            timestamp,
+            timestamp_ms,
         })
     }
 

@@ -14,7 +14,8 @@ The features provided by this draft implementation are not meant to be functiona
 Supported features:
 
 - [x] market orders
-- [x] limit orders
+- [x] limit orders - GTC
+- [ ] time in force options GTC/IOC/FOK
 - [ ] stop loss orders
 - [ ] stop loss limit orders
 - [ ] take profit orders
