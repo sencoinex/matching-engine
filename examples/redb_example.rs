@@ -1,5 +1,6 @@
 use matching_engine::{
-    AssetPair, LimitOrder, LimitOrderRepositoryLike, MatchingEngine, OrderRequest, OrderSide,
+    AmendOrder, AssetPair, CancelOrder, LimitOrder, LimitOrderRepositoryLike, MarketOrder,
+    MatchingEngine, OrderRequest, OrderSide, OrderType,
 };
 use redb::ReadableTable;
 use rust_decimal::prelude::*;
@@ -227,6 +228,9 @@ const ASK_LIMIT_ORDER_TABLE: redb::TableDefinition<u128, &[u8]> =
 struct PriceIndexValue(Vec<u128>);
 
 impl PriceIndexValue {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
     pub fn push(&mut self, id: &MyOrderId) {
         self.0.push(id.0)
     }
@@ -321,9 +325,13 @@ impl<'db> MyBidLimitOrderRepository<'db> {
             PriceIndexValue::default()
         };
         value.remove(&order_id);
-        let mut index_value_bytes = Vec::new();
-        value.encode(&mut index_value_bytes)?;
-        index.insert(&key, &index_value_bytes)?;
+        if value.is_empty() {
+            index.remove(&key)?;
+        } else {
+            let mut index_value_bytes = Vec::new();
+            value.encode(&mut index_value_bytes)?;
+            index.insert(&key, &index_value_bytes)?;
+        }
         Ok(())
     }
 }
@@ -516,9 +524,13 @@ impl<'db> MyAskLimitOrderRepository<'db> {
             PriceIndexValue::default()
         };
         value.remove(&order_id);
-        let mut index_value_bytes = Vec::new();
-        value.encode(&mut index_value_bytes)?;
-        index.insert(&key, &index_value_bytes)?;
+        if value.is_empty() {
+            index.remove(&key)?;
+        } else {
+            let mut index_value_bytes = Vec::new();
+            value.encode(&mut index_value_bytes)?;
+            index.insert(&key, &index_value_bytes)?;
+        }
         Ok(())
     }
 }
@@ -694,14 +706,84 @@ fn main() -> Result<()> {
         bid_limit_order_repository: MyBidLimitOrderRepository::new(&database, asset_pair.clone()),
         ask_limit_order_repository: MyAskLimitOrderRepository::new(&database, asset_pair.clone()),
     };
-    let order_requests = vec![OrderRequest::Limit(LimitOrder {
+    let mut order_requests = vec![
+        OrderRequest::Limit(LimitOrder {
+            id: MyOrderId::new(),
+            asset_pair: asset_pair.clone(),
+            side: OrderSide::Bid,
+            price: MyPrice::new(98, 2),
+            quantity: MyQuantity::new(50, 1),
+            timestamp_ms: current_timestamp_ms(),
+        }),
+        OrderRequest::Limit(LimitOrder {
+            id: MyOrderId::new(),
+            asset_pair: asset_pair.clone(),
+            side: OrderSide::Ask,
+            price: MyPrice::new(102, 2),
+            quantity: MyQuantity::new(10, 1),
+            timestamp_ms: current_timestamp_ms(),
+        }),
+    ];
+    if let OrderRequest::Limit(first_limit_order) = order_requests.get(0).unwrap() {
+        order_requests.push(OrderRequest::Amend(AmendOrder {
+            id: MyOrderId::new(),
+            asset_pair: asset_pair.clone(),
+            target_id: first_limit_order.id.clone(),
+            target_order_type: OrderType::Limit,
+            side: first_limit_order.side,
+            price: MyPrice::new(99, 2),
+            quantity: MyQuantity::new(40, 1),
+            timestamp_ms: current_timestamp_ms(),
+        }));
+    }
+    order_requests.push(OrderRequest::Limit(LimitOrder {
         id: MyOrderId::new(),
         asset_pair: asset_pair.clone(),
         side: OrderSide::Bid,
-        price: MyPrice::new(98, 2),
-        quantity: MyQuantity::new(50, 1),
+        price: MyPrice::new(101, 2),
+        quantity: MyQuantity::new(4, 1),
         timestamp_ms: current_timestamp_ms(),
-    })];
+    }));
+    order_requests.push(OrderRequest::Limit(LimitOrder {
+        id: MyOrderId::new(),
+        asset_pair: asset_pair.clone(),
+        side: OrderSide::Ask,
+        price: MyPrice::new(103, 2),
+        quantity: MyQuantity::new(5, 1),
+        timestamp_ms: current_timestamp_ms(),
+    }));
+    order_requests.push(OrderRequest::Market(MarketOrder {
+        id: MyOrderId::new(),
+        asset_pair: asset_pair.clone(),
+        side: OrderSide::Bid,
+        quantity: MyQuantity::new(10, 1),
+        timestamp_ms: current_timestamp_ms(),
+    }));
+    order_requests.push(OrderRequest::Limit(LimitOrder {
+        id: MyOrderId::new(),
+        asset_pair: asset_pair.clone(),
+        side: OrderSide::Ask,
+        price: MyPrice::new(105, 2),
+        quantity: MyQuantity::new(5, 1),
+        timestamp_ms: current_timestamp_ms(),
+    }));
+    if let OrderRequest::Limit(fourth_limit_order) = order_requests.get(4).unwrap() {
+        order_requests.push(OrderRequest::Cancel(CancelOrder {
+            id: MyOrderId::new(),
+            asset_pair: asset_pair.clone(),
+            target_id: fourth_limit_order.id.clone(),
+            target_order_type: OrderType::Limit,
+            side: fourth_limit_order.side,
+        }));
+    }
+    order_requests.push(OrderRequest::Limit(LimitOrder {
+        id: MyOrderId::new(),
+        asset_pair: asset_pair.clone(),
+        side: OrderSide::Bid,
+        price: MyPrice::new(106, 2),
+        quantity: MyQuantity::new(6, 1),
+        timestamp_ms: current_timestamp_ms(),
+    }));
 
     // processing
     for order_request in order_requests {

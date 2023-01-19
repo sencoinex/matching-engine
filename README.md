@@ -21,14 +21,12 @@ Supported features:
 - [ ] take profit orders
 - [ ] take profit limit orders
 
-## How to use
+## Usage
 
-**install dependency**
+An example code using [redb](https://github.com/cberner/redb) could be found in [examples/redb_example.rs](./examples/redb_example.rs).
+This example supports ACID transactions for each order.
 
-```toml
-matching-engine = { version = "0.1.0", git = "https://github.com/sencoinex/matching-engine", branch = "main" }
-```
 
-**basic example**
+## Benchmarks
 
 TBD
