@@ -2,9 +2,7 @@
 pub enum OrderType {
     Market,
     Limit,
-    // StopLoss,
-    // StopLossLimit,
-    // TakeProfit,
-    // TakeProfitLimit,
+    Stop,
+    StopLimit,
     // LimitMaker,
 }

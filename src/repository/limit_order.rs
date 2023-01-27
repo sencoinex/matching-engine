@@ -1,6 +1,6 @@
 use crate::{Asset, LimitOrder, OrderId, Price, Quantity};
 
-pub trait LimitOrderRepositoryLike: Send {
+pub trait LimitOrderRepository: Send {
     type Err;
     type Asset: Asset;
     type OrderId: OrderId;
@@ -24,7 +24,7 @@ pub trait LimitOrderRepositoryLike: Send {
         &self,
         tx: &mut Self::Transaction,
         order_id: &Self::OrderId,
-    ) -> Result<(), Self::Err>;
+    ) -> Result<bool, Self::Err>;
 
     fn get_by_order_id(
         &self,

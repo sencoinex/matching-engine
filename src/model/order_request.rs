@@ -1,84 +1,82 @@
-use super::order::{AmendOrder, CancelOrder, LimitOrder, MarketOrder};
-use super::{Asset, AssetPair, OrderId, OrderSide, OrderType, Price, Quantity};
+use super::{Asset, AssetPair, OrderId, OrderSide, OrderType, Price, Quantity, TimeInForce};
 
 #[derive(Debug)]
 pub enum OrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
-    Market(MarketOrder<ID, A, Q>),
-    Limit(LimitOrder<ID, A, P, Q>),
-    Amend(AmendOrder<ID, A, P, Q>),
-    Cancel(CancelOrder<ID, A>),
+    Market(MarketOrderRequest<ID, A, Q>),
+    Limit(LimitOrderRequest<ID, A, P, Q>),
+
+    /// If the market reaches the stop price, this order becomes a market order.
+    /// * Buy:
+    ///   * stop_price > market price ... regarded as stop loss order
+    ///   * stop_price < market_price ... regarded as take profit order
+    /// * Sell:
+    ///   * stop_price < market_price ... regarded as stop loss order
+    ///   * stop_price > market_price ... regarded as take profit order
+    Stop(StopOrderRequest<ID, A, P, Q>),
+
+    /// If the market reaches the stop price, this order becomes a limit order.
+    StopLimit(StopLimitOrderRequest<ID, A, P, Q>),
+
+    Amend(AmendOrderRequest<ID, A, P, Q>),
+    Cancel(CancelOrderRequest<ID, A>),
 }
 
-impl<ID: OrderId, A: Asset, P: Price, Q: Quantity> OrderRequest<ID, A, P, Q> {
-    pub fn new_market(
-        id: ID,
-        asset_pair: AssetPair<A>,
-        side: OrderSide,
-        quantity: Q,
-        timestamp_ms: u64,
-    ) -> Self {
-        Self::Market(MarketOrder {
-            id,
-            asset_pair,
-            side,
-            quantity,
-            timestamp_ms,
-        })
-    }
+#[derive(Debug)]
+pub struct MarketOrderRequest<ID: OrderId, A: Asset, Q: Quantity> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub side: OrderSide,
+    pub quantity: Q,
+}
 
-    pub fn new_limit(
-        id: ID,
-        asset_pair: AssetPair<A>,
-        side: OrderSide,
-        price: P,
-        quantity: Q,
-        timestamp_ms: u64,
-    ) -> Self {
-        Self::Limit(LimitOrder {
-            id,
-            asset_pair,
-            side,
-            price,
-            quantity,
-            timestamp_ms,
-        })
-    }
+#[derive(Debug)]
+pub struct LimitOrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub side: OrderSide,
+    pub time_in_force: TimeInForce,
+    pub price: P,
+    pub quantity: Q,
+}
 
-    pub fn new_amend(
-        id: ID,
-        asset_pair: AssetPair<A>,
-        target_id: ID,
-        target_order_type: OrderType,
-        side: OrderSide,
-        price: P,
-        quantity: Q,
-        timestamp_ms: u64,
-    ) -> Self {
-        Self::Amend(AmendOrder {
-            id,
-            asset_pair,
-            target_id,
-            target_order_type,
-            side,
-            price,
-            quantity,
-            timestamp_ms,
-        })
-    }
+#[derive(Debug)]
+pub struct StopOrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub side: OrderSide,
+    /// trigger price i.e. If the market reaches this stop price, this order becomes a market order.
+    pub stop_price: P,
+    pub quantity: Q,
+}
 
-    pub fn new_cancel(
-        id: ID,
-        asset_pair: AssetPair<A>,
-        target_id: ID,
-        target_order_type: OrderType,
-        side: OrderSide,
-    ) -> Self {
-        Self::Cancel(CancelOrder {
-            id,
-            asset_pair,
-            target_id,
-            target_order_type,
-            side,
-        })
-    }
+#[derive(Debug)]
+pub struct StopLimitOrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub side: OrderSide,
+    /// trigger price i.e. If the market reaches this stop price, this order becomes a limit order.
+    pub stop_price: P,
+    pub time_in_force: TimeInForce,
+    pub price: P,
+    pub quantity: Q,
+}
+
+#[derive(Debug)]
+pub struct AmendOrderRequest<ID: OrderId, A: Asset, P: Price, Q: Quantity> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub target_id: ID,
+    pub target_order_type: OrderType,
+    pub side: OrderSide,
+    pub price: P,
+    pub quantity: Q,
+}
+
+#[derive(Debug)]
+pub struct CancelOrderRequest<ID: OrderId, A: Asset> {
+    pub id: ID,
+    pub asset_pair: AssetPair<A>,
+    pub target_id: ID,
+    pub target_order_type: OrderType,
+    pub side: OrderSide,
 }
