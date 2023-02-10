@@ -7,6 +7,8 @@ mod order_side;
 mod order_type;
 mod price;
 mod quantity;
+mod time_in_force;
+mod trailing_delta;
 
 pub use asset::*;
 pub use asset_pair::*;
@@ -17,3 +19,5 @@ pub use order_side::*;
 pub use order_type::*;
 pub use price::*;
 pub use quantity::*;
+pub use time_in_force::*;
+pub use trailing_delta::*;
