@@ -38,6 +38,7 @@ pub trait LimitOrderRepository: Send {
     fn next(
         &self,
         tx: &mut Self::Transaction,
+        offset: usize,
     ) -> Result<
         Option<LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>>,
         Self::Err,

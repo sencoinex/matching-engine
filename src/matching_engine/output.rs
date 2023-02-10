@@ -52,6 +52,11 @@ pub enum MatchingEngineEvent<ID: OrderId, P: Price, Q: Quantity> {
         timestamp_ms: u64,
     },
 
+    CancelledByTimeInForce {
+        id: ID,
+        timestamp_ms: u64,
+    },
+
     Amended {
         id: ID,
         target_id: ID,

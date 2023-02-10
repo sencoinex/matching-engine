@@ -6,6 +6,7 @@ use crate::{
     model::{
         AmendOrderRequest, Asset, AssetPair, CancelOrderRequest, LimitOrder, MarketOrder, OrderId,
         OrderRequest, OrderSide, OrderType, Price, Quantity, StopLimitOrder, StopOrder,
+        TimeInForce,
     },
     repository::{
         LimitOrderRepository, MarketPriceRepository, PendingStopOrder, PendingStopOrderRepository,
@@ -71,7 +72,7 @@ pub trait MatchingEngine {
     }
 
     fn process_order_request(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         market_price: Option<Self::Price>,
         order_request: OrderRequest<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
@@ -188,14 +189,14 @@ pub trait MatchingEngine {
     }
 
     fn process_market_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         market_order: MarketOrder<Self::OrderId, Self::Asset, Self::Quantity>,
     ) -> Result<(), Self::Err> {
         let opposite_order = match market_order.side {
-            OrderSide::Bid => self.ask_limit_order_repository().next(tx),
-            OrderSide::Ask => self.bid_limit_order_repository().next(tx),
+            OrderSide::Bid => self.ask_limit_order_repository().next(tx, 0),
+            OrderSide::Ask => self.bid_limit_order_repository().next(tx, 0),
         }?;
         if let Some(opposite_order) = opposite_order {
             let matching_complete = self.match_market_order_with_limit_order(
@@ -215,43 +216,119 @@ pub trait MatchingEngine {
     }
 
     fn process_limit_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         limit_order: LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<(), Self::Err> {
-        let opposite_order = match limit_order.side {
-            OrderSide::Bid => self.ask_limit_order_repository().next(tx),
-            OrderSide::Ask => self.bid_limit_order_repository().next(tx),
-        }?;
-        if let Some(opposite_order) = opposite_order {
-            let could_be_matched = match limit_order.side {
-                // verify bid/ask price overlap
-                OrderSide::Bid => limit_order.price >= opposite_order.price,
-                OrderSide::Ask => limit_order.price <= opposite_order.price,
-            };
-            if could_be_matched {
-                let matching_complete = self.match_limit_order_with_limit_order(
-                    tx,
-                    results,
-                    &limit_order,
-                    &opposite_order,
-                )?;
-                if !matching_complete {
-                    let next_limit_order = limit_order.sub_quantity(opposite_order.quantity);
-                    self.process_limit_order(tx, results, next_limit_order)?;
+        if limit_order.time_in_force == TimeInForce::FillOrKill {
+            let mut matching_opposite_orders = vec![];
+            let mut unmatched_quantity = limit_order.quantity;
+            let mut will_complete_match = false;
+            loop {
+                let opposite_order = match limit_order.side {
+                    OrderSide::Bid => self
+                        .ask_limit_order_repository()
+                        .next(tx, matching_opposite_orders.len()),
+                    OrderSide::Ask => self
+                        .bid_limit_order_repository()
+                        .next(tx, matching_opposite_orders.len()),
+                }?;
+                if let Some(opposite_order) = opposite_order {
+                    let could_be_matched = match limit_order.side {
+                        // verify bid/ask price overlap
+                        OrderSide::Bid => limit_order.price >= opposite_order.price,
+                        OrderSide::Ask => limit_order.price <= opposite_order.price,
+                    };
+                    if could_be_matched {
+                        if unmatched_quantity <= opposite_order.quantity {
+                            will_complete_match = true;
+                            matching_opposite_orders.push(opposite_order);
+                            break;
+                        } else {
+                            unmatched_quantity = unmatched_quantity - opposite_order.quantity;
+                            matching_opposite_orders.push(opposite_order);
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if will_complete_match {
+                for opposite_order in matching_opposite_orders {
+                    self.match_limit_order_with_limit_order(
+                        tx,
+                        results,
+                        &limit_order,
+                        &opposite_order,
+                    )?;
                 }
             } else {
-                self.store_new_limit_order(tx, results, &limit_order)?;
+                results.push(Ok(MatchingEngineEvent::CancelledByTimeInForce {
+                    id: limit_order.id,
+                    timestamp_ms: self.current_timestamp_ms(),
+                }));
             }
         } else {
-            self.store_new_limit_order(tx, results, &limit_order)?;
+            let opposite_order = match limit_order.side {
+                OrderSide::Bid => self.ask_limit_order_repository().next(tx, 0),
+                OrderSide::Ask => self.bid_limit_order_repository().next(tx, 0),
+            }?;
+            if let Some(opposite_order) = opposite_order {
+                let could_be_matched = match limit_order.side {
+                    // verify bid/ask price overlap
+                    OrderSide::Bid => limit_order.price >= opposite_order.price,
+                    OrderSide::Ask => limit_order.price <= opposite_order.price,
+                };
+                if could_be_matched {
+                    let matching_complete = self.match_limit_order_with_limit_order(
+                        tx,
+                        results,
+                        &limit_order,
+                        &opposite_order,
+                    )?;
+                    if !matching_complete {
+                        let next_limit_order = limit_order.sub_quantity(opposite_order.quantity);
+                        self.process_limit_order(tx, results, next_limit_order)?;
+                    }
+                } else {
+                    self.process_unmatched_limit_order(tx, results, &limit_order)?;
+                }
+            } else {
+                self.process_unmatched_limit_order(tx, results, &limit_order)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_unmatched_limit_order(
+        &self,
+        tx: &mut Self::Transaction,
+        results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
+        limit_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
+    ) -> Result<(), Self::Err> {
+        match limit_order.time_in_force {
+            TimeInForce::GoodTillCancelled => {
+                // only good till cancelled order will be saved to the storage.
+                self.store_new_limit_order(tx, results, limit_order)?;
+            }
+            TimeInForce::ImmediateOrCancel => {
+                results.push(Ok(MatchingEngineEvent::CancelledByTimeInForce {
+                    id: limit_order.id,
+                    timestamp_ms: self.current_timestamp_ms(),
+                }));
+            }
+            TimeInForce::FillOrKill => {
+                unreachable!()
+            }
         }
         Ok(())
     }
 
     fn process_amend_order_request(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         request: &AmendOrderRequest<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
@@ -300,7 +377,7 @@ pub trait MatchingEngine {
     }
 
     fn process_cancel_order_request(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         request: &CancelOrderRequest<Self::OrderId, Self::Asset>,
@@ -335,11 +412,12 @@ pub trait MatchingEngine {
     }
 
     fn store_new_limit_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         _results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         limit_order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
     ) -> Result<(), Self::Err> {
+        assert_eq!(limit_order.time_in_force, TimeInForce::GoodTillCancelled);
         match limit_order.side {
             OrderSide::Bid => self.bid_limit_order_repository().create(tx, limit_order),
             OrderSide::Ask => self.ask_limit_order_repository().create(tx, limit_order),
@@ -347,7 +425,7 @@ pub trait MatchingEngine {
     }
 
     fn match_market_order_with_limit_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         order: &MarketOrder<Self::OrderId, Self::Asset, Self::Quantity>,
@@ -449,7 +527,7 @@ pub trait MatchingEngine {
     }
 
     fn match_limit_order_with_limit_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         order: &LimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
@@ -551,7 +629,7 @@ pub trait MatchingEngine {
     }
 
     fn process_stop_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         stop_order: StopOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
@@ -582,7 +660,7 @@ pub trait MatchingEngine {
     }
 
     fn process_stop_limit_order(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         stop_limit_order: StopLimitOrder<Self::OrderId, Self::Asset, Self::Price, Self::Quantity>,
@@ -615,7 +693,7 @@ pub trait MatchingEngine {
     /// If the market price has changed, then search stop(or stop limit) orders whose stop price has reached its threshold.
     /// If there exists stop(or stop limit) orders to be processed, issue market(or limit) orders.
     fn handle_price_change(
-        &mut self,
+        &self,
         tx: &mut Self::Transaction,
         results: &mut OrderProcessingResult<Self::OrderId, Self::Price, Self::Quantity>,
         initial_market_price: Option<&Self::Price>,

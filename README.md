@@ -14,12 +14,14 @@ The features provided by this draft implementation are not meant to be functiona
 Supported features:
 
 - [x] market orders
-- [x] limit orders
+- [x] limit orders with time in force options
+  - [x] GTC
+  - [x] IOC
+  - [x] FOK
 - [x] stop orders
 - [x] stop limit orders
 - [ ] trailing stop orders
 - [ ] trailing stop limit orders
-- [ ] limit maker
 
 ## Usage
 
